@@ -1,0 +1,994 @@
+---
+title: "Analysis of Major Asset Classes under Crisis Scenarios"
+
+output: 
+  html_document:
+    toc: true
+    theme: cosmo
+---
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+library(xts)
+library(lubridate)
+library(PerformanceAnalytics)
+library(plyr)
+library(dplyr)
+library(data.table)
+library(ggplot2)
+library(viridis)
+library(hrbrthemes)
+library(birk)
+library(tidyverse)
+library(PerformanceAnalytics)
+library(kableExtra)
+library(formattable)
+library(dygraphs)
+library(plotly)
+library(processx)
+library(RColorBrewer)
+library(htmltools)
+```
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+event.df = data.frame (event  = c("Ribbentrop-Molotov pact", "Germany attacks France in WW2 (prelude to start of WW2)", "Japan Pearl Harbor attack", "Start of Korean War", "Start of Suez War", "Start of Israel Arab War", "Iraq invasion of Kuwait", "Start of Iraq War", "Russia Attacks Ukraine", "Berlin Blockade", "First Soviet Atomic Bomb", "First Soviet Hydrogen Bomb", "Hungarian Revolution of 1956", "Sputnik 1", "Cuba Bay of Pigs", "Berlin Wall Crisis of 1961", "Cuban Missile Crisis", "Tet offensive (part of Vietnam War)", "Munich Olympic Games Massacre", "Iranian hostage crisis", "Start of Iraq-Iran War", "Kosovo bombing", "9/11 Event", "Arab Spring (Egypt)", "Eisenhower Hearth Attack", "Assassination of Kennedy", "Attempted Assassination of Reagan", "Trump tested positive for COVID19"),
+                       date = c("19390823", "19400510", "19411207", "19500625", "19561029", "19731029", "19900802", "20030320", "20220224", "19480618", "19490923", "19530820", "19561104", "19571004", "19610417", "19610813", "19621022", "19680130", "19720905", "19791005", "19800922", "19990323", "20010911", "20110125", "19550925", "19631122", "19810330", "20201002")
+                      )
+event.df$date = ymd(event.df$date)
+```
+
+# SPX
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+SPX = read.csv('/Users/Jagonii/Library/CloudStorage/GoogleDrive-jagon.chou@trinity-macro.com/.shortcut-targets-by-id/1-0KaiqpvHTFU43kjG92bBw0UEeigKXWT/Jagon/Project 4/data/SPX.csv')
+SPX$Date = ymd(as.character(SPX$Date))
+SPX$event = NA
+```
+
+## Fit the event to index dates
+But notice that some event dates don't have index values, so we need to find the nearest date
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+setDT(SPX) ## convert to data.table by reference
+setDT(event.df)
+SPX[, date := Date]  ## create a duplicate of 'Date'
+setkey(SPX, Date)    ## set the column to perform the join on
+setkey(event.df, date)
+```
+
+```{r message=FALSE, warning=FALSE}
+match.df = SPX[event.df, roll=Inf] ## perform rolling join
+match.df = match.df[!is.na(match.df$date),]
+match.df = match.df[(match.df$Date - match.df$date) <= 5, ]  # criteria to prevent inaccurate date match
+setnames(match.df, c('date','Date'), c('Date','date'))
+setcolorder(match.df, c('Close', 'Date', 'i.event', 'date'))
+
+match.df = match.df[,c(1,2,3)]
+formattable(match.df)
+```
+
+## Rolling 30 days
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+for (i in 1:length(match.df$Date)) {
+  for (j in 1:length(SPX$Date)) {
+    if (match.df$Date[i] == SPX$Date[j]) {
+      for (k in 0:29) {
+        #if (SPX$Date[j+k]>=match.df$Date[i] & SPX$Date[j+k]<=match.df$Date[i]+30) {
+        SPX$event[j+k] = match.df$i.event[i]
+        #}
+      }
+    }
+  }
+}
+```
+
+### Create xts and remove NA rows
+
+```{r message=FALSE, warning=FALSE}
+SPX.roll30.xts = xts(SPX[,c(5,6)], SPX$Date)
+SPX.roll30.xts = SPX.roll30.xts[complete.cases(SPX.roll30.xts), ]  # remove NA rows
+SPX.roll30.xts = SPX.roll30.xts %>% data.table(keep.rownames = TRUE)
+SPX.roll30.xts = add_count(SPX.roll30.xts, event)
+kable(SPX.roll30.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+### Group Daily Return (percentage) and Group Cumulative Return
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+SPX.roll30.xts = SPX.roll30.xts[, ret := (as.numeric(Close) - as.numeric(shift(Close))) / as.numeric(shift(Close)), by=event][]
+SPX.roll30.xts[is.na(SPX.roll30.xts)] <- 0  # replace NA(first date of each event) with 0
+SPX.roll30.xts = SPX.roll30.xts[, cumret := cumprod(1+ret), by=event][]
+SPX.roll30.xts$ret = SPX.roll30.xts$ret*100
+colnames(SPX.roll30.xts)[5] = 'percent'
+```
+
+```{r message=FALSE, warning=FALSE}
+kable(SPX.roll30.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+## Rolling 60 days
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+for (i in 1:length(match.df$Date)) {
+  for (j in 1:length(SPX$Date)) {
+    if (match.df$Date[i] == SPX$Date[j]) {
+      for (k in 0:59) {
+        #if (SPX$Date[j+k]>=match.df$Date[i] & SPX$Date[j+k]<=match.df$Date[i]+60) {
+        SPX$event[j+k] = match.df$i.event[i]
+        #}
+      }
+    }
+  }
+}
+```
+
+### Create xts and remove NA rows
+
+```{r message=FALSE, warning=FALSE}
+SPX.roll60.xts = xts(SPX[,c(5,6)], SPX$Date)
+SPX.roll60.xts = SPX.roll60.xts[complete.cases(SPX.roll60.xts), ]  # remove NA rows
+SPX.roll60.xts = SPX.roll60.xts %>% data.table(keep.rownames = TRUE)
+SPX.roll60.xts = add_count(SPX.roll60.xts, event)
+kable(SPX.roll60.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+### Group Daily Return (percentage) and Group Cumulative Return
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+SPX.roll60.xts = SPX.roll60.xts[, ret := (as.numeric(Close) - as.numeric(shift(Close))) / as.numeric(shift(Close)), by=event][]
+SPX.roll60.xts[is.na(SPX.roll60.xts)] <- 0  # replace NA(first date of each event) with 0
+SPX.roll60.xts = SPX.roll60.xts[, cumret := cumprod(1+ret), by=event][]
+SPX.roll60.xts$ret = SPX.roll60.xts$ret*100
+colnames(SPX.roll60.xts)[5] = 'percent'
+```
+
+```{r message=FALSE, warning=FALSE}
+kable(SPX.roll60.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+## Rolling 90 days
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+for (i in 1:length(match.df$Date)) {
+  for (j in 1:length(SPX$Date)) {
+    if (match.df$Date[i] == SPX$Date[j]) {
+      for (k in 0:89) {
+        #if (SPX$Date[j+k]>=match.df$Date[i] & SPX$Date[j+k]<=match.df$Date[i]+90) {
+        SPX$event[j+k] = match.df$i.event[i]
+        #}
+      }
+    }
+  }
+}
+```
+
+### Create xts and remove NA rows
+
+```{r message=FALSE, warning=FALSE}
+SPX.roll90.xts = xts(SPX[,c(5,6)], SPX$Date)
+SPX.roll90.xts = SPX.roll90.xts[complete.cases(SPX.roll90.xts), ]  # remove NA rows
+SPX.roll90.xts = SPX.roll90.xts %>% data.table(keep.rownames = TRUE)
+SPX.roll90.xts = add_count(SPX.roll90.xts, event)
+kable(SPX.roll90.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+### Group Daily Return (percentage) and Group Cumulative Return
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+SPX.roll90.xts = SPX.roll90.xts[, ret := (as.numeric(Close) - as.numeric(shift(Close))) / as.numeric(shift(Close)), by=event][]
+SPX.roll90.xts[is.na(SPX.roll90.xts)] <- 0  # replace NA(first date of each event) with 0
+SPX.roll90.xts = SPX.roll90.xts[, cumret := cumprod(1+ret), by=event][]
+SPX.roll90.xts$ret = SPX.roll90.xts$ret*100
+colnames(SPX.roll90.xts)[5] = 'percent'
+```
+
+```{r message=FALSE, warning=FALSE}
+kable(SPX.roll90.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+SPX.30 = SPX.roll30.xts %>% 
+          group_by(event) %>% 
+          slice_tail(n = 1)
+SPX.30$cumret = (SPX.30$cumret-1)*100
+SPX.30 = SPX.30[, c(3, 6)]
+colnames(SPX.30)[2]  <- 'SPX Post 30 Days CumRet (%)'
+
+
+SPX.60 = SPX.roll60.xts %>% 
+  group_by(event) %>% 
+  slice_tail(n = 1)
+SPX.60$cumret = (SPX.60$cumret-1)*100
+SPX.60 = SPX.60[, c(3, 6)]
+colnames(SPX.60)[2]  <- 'SPX Post 60 Days CumRet (%)'
+
+
+SPX.90 = SPX.roll90.xts %>% 
+  group_by(event) %>% 
+  slice_tail(n = 1)
+SPX.90$cumret = (SPX.90$cumret-1)*100
+SPX.90 = SPX.90[, c(3, 6)]
+colnames(SPX.90)[2]  <- 'SPX Post 90 Days CumRet (%)'
+```
+
+
+# CL
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+CL = read.csv('/Users/Jagonii/Library/CloudStorage/GoogleDrive-jagon.chou@trinity-macro.com/.shortcut-targets-by-id/1-0KaiqpvHTFU43kjG92bBw0UEeigKXWT/Jagon/Project 4/data/CL.csv')
+CL$Date = ymd(as.character(CL$Date))
+CL$event = NA
+```
+
+## Fit the event to index dates
+But notice that some event dates don't have index values, so we need to find the nearest date
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+setDT(CL) ## convert to data.table by reference
+setDT(event.df)
+CL[, date := Date]  ## create a duplicate of 'Date'
+setkey(CL, Date)    ## set the column to perform the join on
+setkey(event.df, date)
+```
+
+```{r message=FALSE, warning=FALSE}
+match.df = CL[event.df, roll=Inf] ## perform rolling join
+match.df = match.df[!is.na(match.df$date),]
+match.df = match.df[(match.df$Date - match.df$date) <= 5, ]  # criteria to prevent inaccurate date match.
+setnames(match.df, c('date','Date'), c('Date','date'))
+setcolorder(match.df, c('Close', 'Date', 'i.event', 'date'))
+match.df = match.df[,c(1,2,3)]
+formattable(match.df)
+```
+
+
+## Rolling 30 days
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+for (i in 1:length(match.df$Date)) {
+  for (j in 1:length(CL$Date)) {
+    if (match.df$Date[i] == CL$Date[j]) {
+      for (k in 0:29) {
+        #if (CL$Date[j+k]>=match.df$Date[i] & CL$Date[j+k]<=match.df$Date[i]+30) {
+        CL$event[j+k] = match.df$i.event[i]
+        #}
+      }
+    }
+  }
+}
+```
+
+### Create xts and remove NA rows
+
+```{r message=FALSE, warning=FALSE}
+CL.roll30.xts = xts(CL[,c(5,6)], CL$Date)
+CL.roll30.xts = CL.roll30.xts[complete.cases(CL.roll30.xts), ]  # remove NA rows
+CL.roll30.xts = CL.roll30.xts %>% data.table(keep.rownames = TRUE)
+CL.roll30.xts = add_count(CL.roll30.xts, event)
+kable(CL.roll30.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+### Group Daily Return (percentage) and Group Cumulative Return
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+CL.roll30.xts = CL.roll30.xts[, ret := (as.numeric(Close) - as.numeric(shift(Close))) / as.numeric(shift(Close)), by=event][]
+CL.roll30.xts[is.na(CL.roll30.xts)] <- 0  # replace NA(first date of each event) with 0
+CL.roll30.xts = CL.roll30.xts[, cumret := cumprod(1+ret), by=event][]
+CL.roll30.xts$ret = CL.roll30.xts$ret*100
+colnames(CL.roll30.xts)[5] = 'percent'
+```
+
+```{r message=FALSE, warning=FALSE}
+kable(CL.roll30.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+## Rolling 60 days
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+for (i in 1:length(match.df$Date)) {
+  for (j in 1:length(CL$Date)) {
+    if (match.df$Date[i] == CL$Date[j]) {
+      for (k in 0:59) {
+        #if (CL$Date[j+k]>=match.df$Date[i] & CL$Date[j+k]<=match.df$Date[i]+60) {
+        CL$event[j+k] = match.df$i.event[i]
+        #}
+      }
+    }
+  }
+}
+```
+
+### Create xts and remove NA rows
+
+```{r message=FALSE, warning=FALSE}
+CL.roll60.xts = xts(CL[,c(5,6)], CL$Date)
+CL.roll60.xts = CL.roll60.xts[complete.cases(CL.roll60.xts), ]  # remove NA rows
+CL.roll60.xts = CL.roll60.xts %>% data.table(keep.rownames = TRUE)
+CL.roll60.xts = add_count(CL.roll60.xts, event)
+kable(CL.roll60.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+### Group Daily Return (percentage) and Group Cumulative Return
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+CL.roll60.xts = CL.roll60.xts[, ret := (as.numeric(Close) - as.numeric(shift(Close))) / as.numeric(shift(Close)), by=event][]
+CL.roll60.xts[is.na(CL.roll60.xts)] <- 0  # replace NA(first date of each event) with 0
+CL.roll60.xts = CL.roll60.xts[, cumret := cumprod(1+ret), by=event][]
+CL.roll60.xts$ret = CL.roll60.xts$ret*100
+colnames(CL.roll60.xts)[5] = 'percent'
+```
+
+```{r message=FALSE, warning=FALSE}
+kable(CL.roll60.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+## Rolling 90 days
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+for (i in 1:length(match.df$Date)) {
+  for (j in 1:length(CL$Date)) {
+    if (match.df$Date[i] == CL$Date[j]) {
+      for (k in 0:89) {
+        #if (CL$Date[j+k]>=match.df$Date[i] & CL$Date[j+k]<=match.df$Date[i]+90) {
+        CL$event[j+k] = match.df$i.event[i]
+        #}
+      }
+    }
+  }
+}
+```
+
+### Create xts and remove NA rows
+
+```{r message=FALSE, warning=FALSE}
+CL.roll90.xts = xts(CL[,c(5,6)], CL$Date)
+CL.roll90.xts = CL.roll90.xts[complete.cases(CL.roll90.xts), ]  # remove NA rows
+CL.roll90.xts = CL.roll90.xts %>% data.table(keep.rownames = TRUE)
+CL.roll90.xts = add_count(CL.roll90.xts, event)
+kable(CL.roll90.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+### Group Daily Return (percentage) and Group Cumulative Return
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+CL.roll90.xts = CL.roll90.xts[, ret := (as.numeric(Close) - as.numeric(shift(Close))) / as.numeric(shift(Close)), by=event][]
+CL.roll90.xts[is.na(CL.roll90.xts)] <- 0  # replace NA(first date of each event) with 0
+CL.roll90.xts = CL.roll90.xts[, cumret := cumprod(1+ret), by=event][]
+CL.roll90.xts$ret = CL.roll90.xts$ret*100
+colnames(CL.roll90.xts)[5] = 'percent'
+```
+
+```{r message=FALSE, warning=FALSE}
+kable(CL.roll90.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+CL.30 = CL.roll30.xts %>% 
+  group_by(event) %>% 
+  slice_tail(n = 1)
+CL.30$cumret = (CL.30$cumret-1)*100
+CL.30 = CL.30[, c(3, 6)]
+colnames(CL.30)[2]  <- 'CL Post 30 Days CumRet (%)'
+
+
+CL.60 = CL.roll60.xts %>% 
+  group_by(event) %>% 
+  slice_tail(n = 1)
+CL.60$cumret = (CL.60$cumret-1)*100
+CL.60 = CL.60[, c(3, 6)]
+colnames(CL.60)[2]  <- 'CL Post 60 Days CumRet (%)'
+
+
+CL.90 = CL.roll90.xts %>% 
+  group_by(event) %>% 
+  slice_tail(n = 1)
+CL.90$cumret = (CL.90$cumret-1)*100
+CL.90 = CL.90[, c(3, 6)]
+colnames(CL.90)[2]  <- 'CL Post 90 Days CumRet (%)'
+```
+
+
+
+# TY
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+TY = read.csv('/Users/Jagonii/Library/CloudStorage/GoogleDrive-jagon.chou@trinity-macro.com/.shortcut-targets-by-id/1-0KaiqpvHTFU43kjG92bBw0UEeigKXWT/Jagon/Project 4/data/TY.csv')
+TY$Date = ymd(as.character(TY$Date))
+TY$event = NA
+```
+
+## Fit the event to index dates
+But notice that some event dates don't have index values, so we need to find the nearest date
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+setDT(TY) ## convert to data.table by reference
+setDT(event.df)
+TY[, date := Date]  ## create a duplicate of 'Date'
+setkey(TY, Date)    ## set the column to perform the join on
+setkey(event.df, date)
+```
+
+```{r message=FALSE, warning=FALSE}
+match.df = TY[event.df, roll=Inf] ## perform rolling join
+match.df = match.df[!is.na(match.df$date),]
+match.df = match.df[(match.df$Date - match.df$date) <= 5, ]  # criteria to prevent inaccurate date match.
+setnames(match.df, c('date','Date'), c('Date','date'))
+setcolorder(match.df, c('Close', 'Date', 'i.event', 'date'))
+match.df = match.df[,c(1,2,3)]
+formattable(match.df)
+```
+
+## Rolling 30 days
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+for (i in 1:length(match.df$Date)) {
+  for (j in 1:length(TY$Date)) {
+    if (match.df$Date[i] == TY$Date[j]) {
+      for (k in 0:29) {
+        #if (TY$Date[j+k]>=match.df$Date[i] & TY$Date[j+k]<=match.df$Date[i]+30) {
+        TY$event[j+k] = match.df$i.event[i]
+        #}
+      }
+    }
+  }
+}
+```
+
+### Create xts and remove NA rows
+
+```{r message=FALSE, warning=FALSE}
+TY.roll30.xts = xts(TY[,c(5,6)], TY$Date)
+TY.roll30.xts = TY.roll30.xts[complete.cases(TY.roll30.xts), ]  # remove NA rows
+TY.roll30.xts = TY.roll30.xts %>% data.table(keep.rownames = TRUE)
+TY.roll30.xts = add_count(TY.roll30.xts, event)
+kable(TY.roll30.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+### Group Daily Return (percentage) and Group Cumulative Return
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+TY.roll30.xts = TY.roll30.xts[, ret := (as.numeric(Close) - as.numeric(shift(Close))) / as.numeric(shift(Close)), by=event][]
+TY.roll30.xts[is.na(TY.roll30.xts)] <- 0  # replace NA(first date of each event) with 0
+TY.roll30.xts = TY.roll30.xts[, cumret := cumprod(1+ret), by=event][]
+TY.roll30.xts$ret = TY.roll30.xts$ret*100
+colnames(TY.roll30.xts)[5] = 'percent'
+```
+
+```{r message=FALSE, warning=FALSE}
+kable(TY.roll30.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+## Rolling 60 days
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+for (i in 1:length(match.df$Date)) {
+  for (j in 1:length(TY$Date)) {
+    if (match.df$Date[i] == TY$Date[j]) {
+      for (k in 0:59) {
+        #if (TY$Date[j+k]>=match.df$Date[i] & TY$Date[j+k]<=match.df$Date[i]+60) {
+        TY$event[j+k] = match.df$i.event[i]
+        #}
+      }
+    }
+  }
+}
+```
+
+### Create xts and remove NA rows
+
+```{r message=FALSE, warning=FALSE}
+TY.roll60.xts = xts(TY[,c(5,6)], TY$Date)
+TY.roll60.xts = TY.roll60.xts[complete.cases(TY.roll60.xts), ]  # remove NA rows
+TY.roll60.xts = TY.roll60.xts %>% data.table(keep.rownames = TRUE)
+TY.roll60.xts = add_count(TY.roll60.xts, event)
+kable(TY.roll60.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+### Group Daily Return (percentage) and Group Cumulative Return
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+TY.roll60.xts = TY.roll60.xts[, ret := (as.numeric(Close) - as.numeric(shift(Close))) / as.numeric(shift(Close)), by=event][]
+TY.roll60.xts[is.na(TY.roll60.xts)] <- 0  # replace NA(first date of each event) with 0
+TY.roll60.xts = TY.roll60.xts[, cumret := cumprod(1+ret), by=event][]
+TY.roll60.xts$ret = TY.roll60.xts$ret*100
+colnames(TY.roll60.xts)[5] = 'percent'
+```
+
+```{r message=FALSE, warning=FALSE}
+kable(TY.roll60.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+## Rolling 90 days
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+for (i in 1:length(match.df$Date)) {
+  for (j in 1:length(TY$Date)) {
+    if (match.df$Date[i] == TY$Date[j]) {
+      for (k in 0:89) {
+        #if (TY$Date[j+k]>=match.df$Date[i] & TY$Date[j+k]<=match.df$Date[i]+90) {
+        TY$event[j+k] = match.df$i.event[i]
+        #}
+      }
+    }
+  }
+}
+```
+
+### Create xts and remove NA rows
+
+```{r message=FALSE, warning=FALSE}
+TY.roll90.xts = xts(TY[,c(5,6)], TY$Date)
+TY.roll90.xts = TY.roll90.xts[complete.cases(TY.roll90.xts), ]  # remove NA rows
+TY.roll90.xts = TY.roll90.xts %>% data.table(keep.rownames = TRUE)
+TY.roll90.xts = add_count(TY.roll90.xts, event)
+kable(TY.roll90.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+### Group Daily Return (percentage) and Group Cumulative Return
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+TY.roll90.xts = TY.roll90.xts[, ret := (as.numeric(Close) - as.numeric(shift(Close))) / as.numeric(shift(Close)), by=event][]
+TY.roll90.xts[is.na(TY.roll90.xts)] <- 0  # replace NA(first date of each event) with 0
+TY.roll90.xts = TY.roll90.xts[, cumret := cumprod(1+ret), by=event][]
+TY.roll90.xts$ret = TY.roll90.xts$ret*100
+colnames(TY.roll90.xts)[5] = 'percent'
+```
+
+```{r message=FALSE, warning=FALSE}
+kable(TY.roll90.xts, "html") %>%
+    kable_styling() %>%
+    scroll_box(height = "500px")
+```
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+TY.30 = TY.roll30.xts %>% 
+  group_by(event) %>% 
+  slice_tail(n = 1)
+TY.30$cumret = (TY.30$cumret-1)*100
+TY.30 = TY.30[, c(3, 6)]
+colnames(TY.30)[2]  <- 'TY Post 30 Days CumRet (%)'
+
+
+TY.60 = TY.roll60.xts %>% 
+  group_by(event) %>% 
+  slice_tail(n = 1)
+TY.60$cumret = (TY.60$cumret-1)*100
+TY.60 = TY.60[, c(3, 6)]
+colnames(TY.60)[2]  <- 'TY Post 60 Days CumRet (%)'
+
+
+TY.90 = TY.roll90.xts %>% 
+  group_by(event) %>% 
+  slice_tail(n = 1)
+TY.90$cumret = (TY.90$cumret-1)*100
+TY.90 = TY.90[, c(3, 6)]
+colnames(TY.90)[2]  <- 'TY Post 90 Days CumRet (%)'
+```
+
+
+# Cumulative Returns
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+df_list <- list(SPX.30, SPX.60, SPX.90, CL.30, CL.60, CL.90, TY.30, TY.60, TY.90)
+record = df_list %>% reduce(full_join, by='event')
+formattable(record)
+```
+
+
+# Visualization
+
+## Vertical bind
+
+```{r message=FALSE, warning=FALSE}
+SPX.roll90.xts$Name = 'SPX'
+CL.roll90.xts$Name = 'CL'
+TY.roll90.xts$Name = 'TY'
+merge = rbind(SPX.roll90.xts, CL.roll90.xts, TY.roll90.xts)
+merge = merge[order(Name, index),]
+```
+
+## Function for Individual Plot
+### Vertical line function
+
+```{r message=FALSE, warning=FALSE}
+vline <- function(x = 0, color = "red") {
+  list(
+    type = "line", 
+    y0 = 0, 
+    y1 = 1, 
+    yref = "paper",
+    x0 = x, 
+    x1 = x, 
+    line = list(color = color)
+  )
+}
+```
+
+
+I write this function to avoid different colors for one index in the subplots
+
+```{r message=FALSE, warning=FALSE}
+create_plot = function(dt, eve, names, i){
+  mypalette = brewer.pal(length(names), "Dark2")
+  
+  p = plot_ly(dt[dt$event == eve], x = dt[dt$event == eve & dt$Name == 'SPX']$index, y = (dt[dt$event == eve & dt$Name == 'SPX']$cumret-1)*100, name = names[1], type = 'scatter', mode = 'lines') %>%
+    add_trace(x = dt[dt$event == eve & dt$Name == 'CL']$index, y = (dt[dt$event == eve & dt$Name == 'CL']$cumret-1)*100, name = names[2], mode = 'lines') %>% 
+    add_trace(x = dt[dt$event == eve & dt$Name == 'TY']$index, y = (dt[dt$event == eve & dt$Name == 'TY']$cumret-1)*100, name = names[3], mode = 'lines') %>% 
+    layout(title = paste(eve),
+           xaxis = list(title = "Date"),
+           yaxis = list (title = "Cumulative Return (%)"))
+  
+  a = list(text='',
+          xref = "paper",
+          yref = "paper",
+          yanchor = "bottom",
+          xanchor = "center",
+          color = names,
+          colors = mypalette,
+          align = "left",
+          valign = "top",
+          x = 0.5,
+          y = 1,
+          showarrow = FALSE)
+  p = p %>% layout(shapes = list(vline(dt[dt$event == eve & dt$Name == 'SPX']$index[30]), vline(dt[dt$event == eve & dt$Name == 'SPX']$index[60])), colorway=mypalette, annotations=a)
+  return(p)
+}
+```
+
+### For loop to create 28 plots
+```{r message=FALSE, warning=FALSE}
+for (k in 1:length(event.df$event)){
+  plt = create_plot(merge, event.df$event[k], names = c("SPX", "CL", "TY"), k)
+  print(plt)
+}
+```
+
+
+## Function for Group Plot
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+create_plot2 = function(dt, eve, names, i){
+  mypalette = brewer.pal(length(names), "Dark2")
+  
+  p = plot_ly(dt[dt$event == eve], x = dt[dt$event == eve & dt$Name == 'SPX']$index, y = (dt[dt$event == eve & dt$Name == 'SPX']$cumret-1)*100, name = names[1], type = 'scatter', mode = 'lines') %>%
+    add_trace(x = dt[dt$event == eve & dt$Name == 'CL']$index, y = (dt[dt$event == eve & dt$Name == 'CL']$cumret-1)*100, name = names[2], mode = 'lines') %>% 
+    add_trace(x = dt[dt$event == eve & dt$Name == 'TY']$index, y = (dt[dt$event == eve & dt$Name == 'TY']$cumret-1)*100, name = names[3], mode = 'lines') %>% 
+    layout(title = paste(eve),
+           xaxis = list(title = "Date"),
+           yaxis = list (title = "Cumulative Return (%)"))
+  a = list(text='',
+            xref = "paper",
+            yref = "paper",
+            yanchor = "bottom",
+            xanchor = "center",
+            color = names,
+            colors = mypalette,
+            align = "left",
+            valign = "top",
+            x = 0.5,
+            y = 1,
+            showarrow = FALSE)
+  p = p %>% layout(shapes = list(vline(dt[dt$event == eve & dt$Name == 'SPX']$index[30]), vline(dt[dt$event == eve & dt$Name == 'SPX']$index[60])), colorway=mypalette, annotations=a)
+  return(p)
+}
+```
+
+
+### Create 2x2 subplots
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+fig1_4 = subplot(create_plot2(merge, event.df$event[1], names = c("SPX", "CL", "TY"), 1), create_plot2(merge, event.df$event[2], names = c("SPX", "CL", "TY"), 2), create_plot2(merge, event.df$event[3], names = c("SPX", "CL", "TY"), 3), create_plot2(merge, event.df$event[4], names = c("SPX", "CL", "TY"), 4), nrows = 2, shareY = TRUE) %>%
+  layout(title = '',
+         plot_bgcolor='#e5ecf6', 
+         xaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'), 
+         yaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'))
+  annotations = list( 
+    list(x = 0.2, y = 1.0, text = event.df$event[1], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),  
+    list(x = 0.8, y = 1, text = event.df$event[2], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),  
+    list(x = 0.2, y = 0.45, text = event.df$event[3], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),
+    list(x = 0.8, y = 0.45, text = event.df$event[4], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE))
+fig1_4 = fig1_4 %>%layout(annotations = annotations)
+fig1_4
+```
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+fig5_8 = subplot(create_plot2(merge, event.df$event[5], names = c("SPX", "CL", "TY"), 1), create_plot2(merge, event.df$event[6], names = c("SPX", "CL", "TY"), 2), create_plot2(merge, event.df$event[7], names = c("SPX", "CL", "TY"), 3), create_plot2(merge, event.df$event[8], names = c("SPX", "CL", "TY"), 4), nrows = 2, shareY = TRUE) %>%
+  layout(title = '',
+         plot_bgcolor='#e5ecf6', 
+         xaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'), 
+         yaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'))
+  annotations = list( 
+    list(x = 0.2, y = 1.0, text = event.df$event[5], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),  
+    list(x = 0.8, y = 1, text = event.df$event[6], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),  
+    list(x = 0.2, y = 0.45, text = event.df$event[7], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),
+    list(x = 0.8, y = 0.45, text = event.df$event[8], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE))
+fig5_8 = fig5_8 %>%layout(annotations = annotations)
+fig5_8
+```
+
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+fig9_12 = subplot(create_plot2(merge, event.df$event[9], names = c("SPX", "CL", "TY"), 1), create_plot2(merge, event.df$event[10], names = c("SPX", "CL", "TY"), 2), create_plot2(merge, event.df$event[11], names = c("SPX", "CL", "TY"), 3), create_plot2(merge, event.df$event[12], names = c("SPX", "CL", "TY"), 4), nrows = 2, shareY = TRUE) %>%
+  layout(title = '',
+         plot_bgcolor='#e5ecf6', 
+         xaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'), 
+         yaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'))
+  annotations = list( 
+    list(x = 0.2, y = 1.0, text = event.df$event[9], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),  
+    list(x = 0.8, y = 1, text = event.df$event[10], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),  
+    list(x = 0.2, y = 0.45, text = event.df$event[11], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),
+    list(x = 0.8, y = 0.45, text = event.df$event[12], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE))
+fig9_12 = fig9_12 %>%layout(annotations = annotations)
+fig9_12
+```
+
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+fig13_16 = subplot(create_plot2(merge, event.df$event[13], names = c("SPX", "CL", "TY"), 1), create_plot2(merge, event.df$event[14], names = c("SPX", "CL", "TY"), 2), create_plot2(merge, event.df$event[15], names = c("SPX", "CL", "TY"), 3), create_plot2(merge, event.df$event[16], names = c("SPX", "CL", "TY"), 4), nrows = 2, shareY = TRUE) %>%
+  layout(title = '',
+         plot_bgcolor='#e5ecf6', 
+         xaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'), 
+         yaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'))
+  annotations = list( 
+    list(x = 0.2, y = 1.0, text = event.df$event[13], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),  
+    list(x = 0.8, y = 1, text = event.df$event[14], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),  
+    list(x = 0.2, y = 0.45, text = event.df$event[15], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),
+    list(x = 0.8, y = 0.45, text = event.df$event[16], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE))
+fig13_16 = fig13_16 %>%layout(annotations = annotations)
+fig13_16
+```
+
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+fig17_20 = subplot(create_plot2(merge, event.df$event[17], names = c("SPX", "CL", "TY"), 1), create_plot2(merge, event.df$event[18], names = c("SPX", "CL", "TY"), 2), create_plot2(merge, event.df$event[19], names = c("SPX", "CL", "TY"), 3), create_plot2(merge, event.df$event[20], names = c("SPX", "CL", "TY"), 4), nrows = 2, shareY = TRUE) %>%
+  layout(title = '',
+         plot_bgcolor='#e5ecf6', 
+         xaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'), 
+         yaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'))
+  annotations = list( 
+    list(x = 0.2, y = 1.0, text = event.df$event[17], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),  
+    list(x = 0.8, y = 1, text = event.df$event[18], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),  
+    list(x = 0.2, y = 0.45, text = event.df$event[19], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),
+    list(x = 0.8, y = 0.45, text = event.df$event[20], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE))
+fig17_20 = fig17_20 %>%layout(annotations = annotations)
+fig17_20
+```
+
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+fig21_24 = subplot(create_plot2(merge, event.df$event[21], names = c("SPX", "CL", "TY"), 1), create_plot2(merge, event.df$event[22], names = c("SPX", "CL", "TY"), 2), create_plot2(merge, event.df$event[23], names = c("SPX", "CL", "TY"), 3), create_plot2(merge, event.df$event[24], names = c("SPX", "CL", "TY"), 4), nrows = 2, shareY = TRUE) %>%
+  layout(title = '',
+         plot_bgcolor='#e5ecf6', 
+         xaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'), 
+         yaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'))
+  annotations = list( 
+    list(x = 0.2, y = 1.0, text = event.df$event[21], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),  
+    list(x = 0.8, y = 1, text = event.df$event[22], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),  
+    list(x = 0.2, y = 0.45, text = event.df$event[23], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),
+    list(x = 0.8, y = 0.45, text = event.df$event[24], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE))
+fig21_24 = fig21_24 %>%layout(annotations = annotations)
+fig21_24
+```
+
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+fig25_28 = subplot(create_plot2(merge, event.df$event[25], names = c("SPX", "CL", "TY"), 1), create_plot2(merge, event.df$event[26], names = c("SPX", "CL", "TY"), 2), create_plot2(merge, event.df$event[27], names = c("SPX", "CL", "TY"), 3), create_plot2(merge, event.df$event[28], names = c("SPX", "CL", "TY"), 4), nrows = 2, shareY = TRUE) %>%
+  layout(title = '',
+         plot_bgcolor='#e5ecf6', 
+         xaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'), 
+         yaxis = list( 
+           zerolinecolor = '#ffff', 
+           zerolinewidth = 2, 
+           gridcolor = 'ffff'))
+  annotations = list( 
+    list(x = 0.2, y = 1.0, text = event.df$event[25], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),  
+    list(x = 0.8, y = 1, text = event.df$event[26], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),  
+    list(x = 0.2, y = 0.45, text = event.df$event[27], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),
+    list(x = 0.8, y = 0.45, text = event.df$event[28], xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE))
+fig25_28 = fig25_28 %>%layout(annotations = annotations)
+fig25_28
+```
+
+## Plot by event in each indices
+
+### SPX
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+SPX.10 = plot_ly(SPX.roll90.xts, x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[1]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[1]]$cumret-1)*100, name = event.df$event[1], type = 'scatter', mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[2]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[2]]$cumret-1)*100, name = event.df$event[2], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[3]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[3]]$cumret-1)*100, name = event.df$event[3], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[4]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[4]]$cumret-1)*100, name = event.df$event[4], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[5]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[5]]$cumret-1)*100, name = event.df$event[5], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[6]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[6]]$cumret-1)*100, name = event.df$event[6], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[7]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[7]]$cumret-1)*100, name = event.df$event[7], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[8]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[8]]$cumret-1)*100, name = event.df$event[8], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[9]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[9]]$cumret-1)*100, name = event.df$event[9], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[10]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[10]]$cumret-1)*100, name = event.df$event[10], mode = 'lines') %>%
+  layout(title = '',
+         xaxis = list(title = "Period"),
+         yaxis = list(title = "Cumulative Return (%)"))
+SPX.10 = SPX.10 %>% layout(shapes = list(vline(nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[1]])/3),
+                                 vline(nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[1]])*2/3)),
+                         legend = list(orientation = 'h'))
+```
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+SPX.10
+```
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+SPX.20 = plot_ly(SPX.roll90.xts, x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[11]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[11]]$cumret-1)*100, name = event.df$event[11], type = 'scatter', mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[12]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[12]]$cumret-1)*100, name = event.df$event[12], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[13]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[13]]$cumret-1)*100, name = event.df$event[13], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[14]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[14]]$cumret-1)*100, name = event.df$event[14], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[15]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[15]]$cumret-1)*100, name = event.df$event[15], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[16]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[16]]$cumret-1)*100, name = event.df$event[16], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[17]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[17]]$cumret-1)*100, name = event.df$event[17], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[18]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[18]]$cumret-1)*100, name = event.df$event[18], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[19]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[19]]$cumret-1)*100, name = event.df$event[19], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[20]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[20]]$cumret-1)*100, name = event.df$event[20], mode = 'lines') %>%
+  layout(title = '',
+         xaxis = list(title = "Period"),
+         yaxis = list(title = "Cumulative Return (%)"))
+SPX.20 = SPX.20 %>% layout(shapes = list(vline(nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[11]])/3),
+                                         vline(nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[11]])*2/3)),
+                         legend = list(orientation = 'h'))
+```
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+SPX.20
+```
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+SPX.28 = plot_ly(SPX.roll90.xts, x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[21]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[21]]$cumret-1)*100, name = event.df$event[1], type = 'scatter', mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[22]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[22]]$cumret-1)*100, name = event.df$event[22], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[23]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[23]]$cumret-1)*100, name = event.df$event[23], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[24]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[24]]$cumret-1)*100, name = event.df$event[24], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[25]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[25]]$cumret-1)*100, name = event.df$event[25], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[26]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[26]]$cumret-1)*100, name = event.df$event[26], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[27]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[27]]$cumret-1)*100, name = event.df$event[27], mode = 'lines') %>%
+  add_trace(x = 1:nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[28]]), y = (SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[28]]$cumret-1)*100, name = event.df$event[28], mode = 'lines') %>%
+  layout(title = '',
+         xaxis = list(title = "Period"),
+         yaxis = list(title = "Cumulative Return (%)"))
+SPX.28 = SPX.28 %>% layout(shapes = list(vline(nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[21]])/3),
+                                         vline(nrow(SPX.roll90.xts[SPX.roll90.xts$event == event.df$event[21]])*2/3)),
+                         legend = list(orientation = 'h'))
+```
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+SPX.28
+```
+
+### CL
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+CL.27 = plot_ly(CL.roll90.xts, x = 1:nrow(CL.roll90.xts[CL.roll90.xts$event == event.df$event[22]]), y = (CL.roll90.xts[CL.roll90.xts$event == event.df$event[22]]$cumret-1)*100, name = event.df$event[22], type = 'scatter', mode = 'lines') %>%
+  add_trace(x = 1:nrow(CL.roll90.xts[CL.roll90.xts$event == event.df$event[23]]), y = (CL.roll90.xts[CL.roll90.xts$event == event.df$event[23]]$cumret-1)*100, name = event.df$event[23], mode = 'lines') %>%
+  add_trace(x = 1:nrow(CL.roll90.xts[CL.roll90.xts$event == event.df$event[24]]), y = (CL.roll90.xts[CL.roll90.xts$event == event.df$event[24]]$cumret-1)*100, name = event.df$event[24], mode = 'lines') %>%
+  add_trace(x = 1:nrow(CL.roll90.xts[CL.roll90.xts$event == event.df$event[25]]), y = (CL.roll90.xts[CL.roll90.xts$event == event.df$event[25]]$cumret-1)*100, name = event.df$event[25], mode = 'lines') %>%
+  add_trace(x = 1:nrow(CL.roll90.xts[CL.roll90.xts$event == event.df$event[26]]), y = (CL.roll90.xts[CL.roll90.xts$event == event.df$event[26]]$cumret-1)*100, name = event.df$event[26], mode = 'lines') %>%
+  add_trace(x = 1:nrow(CL.roll90.xts[CL.roll90.xts$event == event.df$event[27]]), y = (CL.roll90.xts[CL.roll90.xts$event == event.df$event[27]]$cumret-1)*100, name = event.df$event[27], mode = 'lines') %>%
+  layout(title = '',
+         xaxis = list(title = "Period"),
+         yaxis = list(title = "Cumulative Return (%)"))
+CL.27 = CL.27 %>% layout(shapes = list(vline(nrow(CL.roll90.xts[CL.roll90.xts$event == event.df$event[22]])/3),
+                                         vline(nrow(CL.roll90.xts[CL.roll90.xts$event == event.df$event[22]])*2/3)),
+                         legend = list(orientation = 'h'))
+```
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+CL.27
+```
+
+### TY
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+TY.27 = plot_ly(TY.roll90.xts, x = 1:nrow(TY.roll90.xts[TY.roll90.xts$event == event.df$event[22]]), y = (TY.roll90.xts[TY.roll90.xts$event == event.df$event[22]]$cumret-1)*100, name = event.df$event[22], type = 'scatter', mode = 'lines') %>%
+  add_trace(x = 1:nrow(TY.roll90.xts[TY.roll90.xts$event == event.df$event[23]]), y = (TY.roll90.xts[TY.roll90.xts$event == event.df$event[23]]$cumret-1)*100, name = event.df$event[23], mode = 'lines') %>%
+  add_trace(x = 1:nrow(TY.roll90.xts[TY.roll90.xts$event == event.df$event[24]]), y = (TY.roll90.xts[TY.roll90.xts$event == event.df$event[24]]$cumret-1)*100, name = event.df$event[24], mode = 'lines') %>%
+  add_trace(x = 1:nrow(TY.roll90.xts[TY.roll90.xts$event == event.df$event[25]]), y = (TY.roll90.xts[TY.roll90.xts$event == event.df$event[25]]$cumret-1)*100, name = event.df$event[25], mode = 'lines') %>%
+  add_trace(x = 1:nrow(TY.roll90.xts[TY.roll90.xts$event == event.df$event[26]]), y = (TY.roll90.xts[TY.roll90.xts$event == event.df$event[26]]$cumret-1)*100, name = event.df$event[26], mode = 'lines') %>%
+  add_trace(x = 1:nrow(TY.roll90.xts[TY.roll90.xts$event == event.df$event[27]]), y = (TY.roll90.xts[TY.roll90.xts$event == event.df$event[27]]$cumret-1)*100, name = event.df$event[27], mode = 'lines') %>%
+  layout(title = '',
+         xaxis = list(title = "Period"),
+         yaxis = list(title = "Cumulative Return (%)"))
+TY.27 = TY.27 %>% layout(shapes = list(vline(nrow(TY.roll90.xts[TY.roll90.xts$event == event.df$event[22]])/3),
+                                       vline(nrow(TY.roll90.xts[TY.roll90.xts$event == event.df$event[22]])*2/3)),
+                         legend = list(orientation = 'h'))
+```
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+TY.27
+```
+
+* To delve into more insights, I created two kinds of plots - Individual / Group plots and Event in each Index plots
+  + CL is the most volatile one while TY is the most stable one
+  + SPX
+    - After some crisis, the returns continued increasing. Although the cumulative return increased, we cannot say the event boosted its performance because it was possible that the overall trend was going up, and the event has no or limited  negative impact on SPX, which caused what we observed. This kind of events include Ribbentrop-Molotov pact, First Soviet Atomic Bomb, Cuban Missile Crisis, Assassination of Kennedy.
+    - Some crisis events don't affect its performance. SPX return seems to be affected by other market conditions rather than this kind of events. For example, Berlin Wall Crisis of 1961, Attempted Assassination of Regan, and Kosovo Bombing.
+    - Some crisis initially caused negative impact on SPX, but after some days, SPX performance turned into a positive. For instance, Start of Korean War caused SPX slumped around 13% and after around 90 days, its cumulative returns turned back to slightly positive. First Soviet Hydrogen Bomb, Eisenhower Health Attack, Tet Offensive, and Munich Olympic Games Massacre turned back to positive after around 60 days. 911 Event turned back after 30 days.
+    - Other crisis caused severely negative impact on SPX performance, like wars. For example, after 30 days of Germany attacks France in WW2, SPX cumret plunged 23%. After 30 days of Japan Pearl Harbor attack, SPX cumret slumped 10%. After around 30 days of Korean War, SPX also slumped 13%. The most severe impact on SPX among these events is 911. The
+    - An interesting thing I found is that lots of the worst performance occurred around 30 days after the outbreak of the event. And for SPX (stock), it seems that the war is the most influential factor.
+  + CL
+    - Except 911 event, CL cumulative returns jumped after other events occurred. The reason behind is that recent years, most of events are related to the Arab region, such as Iraq invasion of Kuwait, Iraq War, and Arab Spring. All this kind of events would make the CL price higher because of the energy crisis.
+  + TY
+    - Most TY cumulative returns lay within ±4%
+    - We can find some correlation between CL and TY. For example, after Iraq invaded Kuwait, energy price hiked and caused CL cumulative return increased, while TY cumulative return dropped.
+  
+
+
+
+
+
+
+
